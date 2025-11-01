@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>School Timetable — Per-Year View</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>School Timetable Editor — Per-Year</h1>
+    <div class="top-actions">
+      <button id="btnAutoSchedule">Auto-schedule</button>
+      <button id="btnClear">Clear assignments</button>
+      <button id="btnExportJSON">Export JSON</button>
+      <button id="btnImportJSON">Import JSON</button>
+      <button id="btnExportCSV">Export CSV</button>
+      <button id="btnPrint">Print</button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="panel" id="panelLeft">
+      <section class="card">
+        <h2>Settings</h2>
+        <label>Working days:
+          <select id="selectDays" multiple>
+            <option value="Mon" selected>Mon</option>
+            <option value="Tue" selected>Tue</option>
+            <option value="Wed" selected>Wed</option>
+            <option value="Thu" selected>Thu</option>
+            <option value="Fri" selected>Fri</option>
+            <option value="Sat" selected>Sat</option>
+            <option value="Sun" selected>Sun</option>
+          </select>
+        </label>
+        <label>Periods per day:
+          <input id="inputPeriods" type="number" min="1" max="12" value="5" />
+        </label>
+        <div style="margin-top:8px">
+          <button id="btnApplySettings">Apply</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Years</h2>
+        <div id="yearsList" class="small"></div>
+        <div class="small" style="margin-top:6px">Click years to toggle selection (used by bulk generation & adding lessons).</div>
+      </section>
+
+      <section class="card">
+        <h2>Subjects (default per-week)</h2>
+        <div id="subjectsList" class="small"></div>
+        <div style="margin-top:8px">
+          <button id="btnGenerateLessonsForYears">Generate lessons for selected years</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Rooms</h2>
+        <div id="roomsList" class="small"></div>
+      </section>
+
+      <section class="card">
+        <h2>Teachers</h2>
+        <div class="form-row">
+          <input id="teacherFullName" placeholder="Full name (e.g. M Harrison)" />
+          <button id="btnAddTeacher">Add</button>
+        </div>
+        <div id="teachersList" class="small"></div>
+        <div class="small" style="margin-top:8px">Click a teacher to edit working days or remove.</div>
+      </section>
+
+      <section class="card">
+        <h2>Create Lesson (multi-year)</h2>
+        <div class="form-row">
+          <select id="lessonYear" multiple size="4" style="min-width:120px"></select>
+        </div>
+        <div class="form-row">
+          <select id="lessonSubject"></select>
+        </div>
+        <div class="form-row">
+          <select id="lessonTeacher"></select>
+        </div>
+        <div class="form-row">
+          <select id="lessonRoom"></select>
+        </div>
+        <div class="form-row">
+          <input id="lessonCount" type="number" min="1" value="1" />
+          <button id="btnAddLesson">Add Lesson(s)</button>
+        </div>
+        <div class="small">Values persist after adding to speed up bulk input.</div>
+      </section>
+
+    </aside>
+
+    <section class="timetable-wrap">
+      <div id="timetable" class="timetable"></div>
+
+      <div class="bottom-panel">
+        <section class="card small" id="filterPanel">
+          <h3>Filters</h3>
+          <div class="form-row">
+            <select id="filterType">
+              <option value="all">All Years</option>
+              <option value="year">Per Year</option>
+              <option value="teacher">Per Teacher</option>
+              <option value="room">Per Room</option>
+              <option value="subject">Per Subject</option>
+              <option value="staff">Whole Teaching Staff</option>
+            </select>
+            <select id="filterValue" style="min-width:140px"></select>
+            <button id="btnApplyFilter">Filter</button>
+            <button id="btnClearFilter">Clear</button>
+          </div>
+          <div class="small">Select a filter type and value, then press Filter to apply.</div>
+        </section>
+
+        <section class="card" id="tokensPanel">
+          <h3>Unassigned Lessons</h3>
+          <div id="tokens" class="tokens"></div>
+          <div class="small">Drag tokens to the correct year/day/slot, or click token then click a slot. Only year-matching assignments are allowed.</div>
+        </section>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <small>Local timetable editor · data stored in your browser. Customize as needed.</small>
+  </footer>
+
+  <input type="file" id="fileImport" accept="application/json" style="display:none" />
+
+  <script src="app.js"></script>
+</body>
+</html>
