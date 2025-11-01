@@ -1,5 +1,5 @@
-// Per-year timetable app (patched): use DOM modals instead of window.confirm/alert so the app works
-// inside sandboxed iframes (allow-modals missing). All confirm/alert calls replaced with async modal helpers.
+// Per-year timetable app (patched): enforce that only "Form Time" lessons can be placed in the Form slot (slotIndex 0).
+// All other behaviour unchanged. Replace your existing app.js with this file.
 
 (function(){
   // State
@@ -263,6 +263,23 @@
       }
     }
   }
+
+  // --- NEW helper: enforce Form-only rule ---
+  function isFormSubjectId(subjectId){
+    if(!subjectId) return false;
+    const s = state.subjects.find(x => x.id === subjectId);
+    if(!s) return false;
+    return (s.name || '').trim().toLowerCase() === 'form time';
+  }
+  function isLessonAssignableToSlot(lesson, slotIndex){
+    if(!lesson) return false;
+    // slotIndex 0 = Form: only allow if lesson's subject is Form Time
+    if(slotIndex === 0) return isFormSubjectId(lesson.subjectId);
+    // non-form slots: do NOT allow Form lessons into non-form slots either
+    if(isFormSubjectId(lesson.subjectId)) return false;
+    return true;
+  }
+  // -----------------------------------------
 
   // Rendering (try/catch keeps UI alive)
   function renderAll(){
@@ -530,12 +547,30 @@
     draggingLessonId = e.currentTarget.dataset.lessonId;
     e.dataTransfer.setData('text/plain', draggingLessonId);
   }
-  function cellDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
-  function cellDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
+
+  // Only allow dragover if the currently dragged lesson (or picked lesson) is permitted for this slot
+  function cellDragOver(e){
+    const td = e.currentTarget;
+    const slotIndex = +td.dataset.slotIndex;
+    const lessonId = draggingLessonId || state.pickedLessonId;
+    if(lessonId){
+      const lesson = state.lessons.find(l=>l.id===lessonId);
+      if(!isLessonAssignableToSlot(lesson, slotIndex)){
+        // not allowed -> do not call preventDefault (so drop won't be allowed)
+        td.classList.add('drag-deny');
+        return;
+      }
+    }
+    e.preventDefault();
+    td.classList.remove('drag-deny');
+    td.classList.add('drag-over');
+  }
+  function cellDragLeave(e){ e.currentTarget.classList.remove('drag-over'); e.currentTarget.classList.remove('drag-deny'); }
 
   async function cellDrop(e){
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
+    e.currentTarget.classList.remove('drag-deny');
     const lessonId = e.dataTransfer.getData('text/plain') || draggingLessonId || state.pickedLessonId;
     if(!lessonId) return;
     const y = +e.currentTarget.dataset.yearIndex;
@@ -543,6 +578,10 @@
     const s = +e.currentTarget.dataset.slotIndex;
     const lesson = state.lessons.find(l=>l.id===lessonId);
     if(!lesson) return;
+    if(!isLessonAssignableToSlot(lesson, s)){
+      await alertDialog(`This lesson cannot be placed in the ${s===0 ? 'Form' : 'period ' + s} slot. Only "Form Time" lessons can be placed in Form, and Form lessons cannot be placed into regular periods.`);
+      return;
+    }
     if(lesson.year !== state.years[y]){
       await alertDialog(`This lesson is for ${lesson.year}. You can only place it in the ${lesson.year} row.`);
       return;
@@ -556,6 +595,11 @@
   async function assignLessonToCell(lessonId, yearIndex, dayIndex, slotIndex){
     const lesson = state.lessons.find(l=>l.id===lessonId);
     if(!lesson) return;
+    // enforce Form-only rule here too (safety)
+    if(!isLessonAssignableToSlot(lesson, slotIndex)){
+      await alertDialog(`Cannot assign this lesson to this slot. Only "Form Time" lessons can go into the Form slot (and Form lessons only go into Form).`);
+      return;
+    }
     if(lesson.teacherId){
       const teacher = state.teachers.find(t=>t.id===lesson.teacherId);
       const dayName = state.days[dayIndex];
@@ -583,6 +627,10 @@
     if(state.pickedLessonId){
       const lesson = state.lessons.find(l=>l.id===state.pickedLessonId);
       if(lesson && lesson.year !== state.years[y]){ await alertDialog(`Picked lesson is for ${lesson.year}. Click a ${lesson.year} row.`); return; }
+      if(!isLessonAssignableToSlot(lesson, s)){
+        await alertDialog(`Picked lesson cannot be placed in this slot. Only "Form Time" lessons can be placed in the Form slot (and Form lessons cannot be placed into regular periods).`);
+        return;
+      }
       await assignLessonToCell(state.pickedLessonId, y, d, s);
       state.pickedLessonId = null; renderAll(); return;
     }
@@ -601,7 +649,8 @@
       }
     }
 
-    const available = state.lessons.filter(l => l.year === state.years[yearIndex] && (remainingCounts[l.id]||0) > 0);
+    // Only show lessons that belong to this year AND are assignable to this slot
+    const available = state.lessons.filter(l => l.year === state.years[yearIndex] && (remainingCounts[l.id]||0) > 0 && isLessonAssignableToSlot(l, slotIndex));
 
     const menu = document.createElement('div');
     menu.style.position='absolute'; menu.style.left='10px'; menu.style.top='10px';
@@ -610,7 +659,7 @@
     const title = document.createElement('div'); title.textContent=`Assign for ${state.years[yearIndex]} (${state.days[dayIndex]} ${slotIndex===0?'Form':('P'+slotIndex)})`; title.style.fontWeight='700'; title.style.marginBottom='6px'; menu.appendChild(title);
 
     if(available.length === 0){
-      const none = document.createElement('div'); none.textContent = 'No assignable lessons remaining for this year.'; menu.appendChild(none);
+      const none = document.createElement('div'); none.textContent = 'No assignable lessons remaining for this year/slot.'; menu.appendChild(none);
     } else {
       available.slice(0,300).forEach(l=>{
         const s = state.subjects.find(x=>x.id===l.subjectId);
@@ -652,6 +701,13 @@
             const tok = tokens[ti];
             const targetYearIdx = yearIndexOf(tok.year);
             if(targetYearIdx !== yi) continue;
+            // Enforce Form-only:
+            // - if s===0 (Form slot): only place tokens that are Form subject
+            // - if s>0 (regular slot): do NOT place Form subject tokens
+            const isTokForm = isFormSubjectId(tok.subjectId);
+            if(s === 0 && !isTokForm) continue;
+            if(s > 0 && isTokForm) continue;
+
             const teacher = state.teachers.find(t=>t.id===tok.teacherId);
             const dayName = state.days[d];
             if(teacher && (!teacher.workingDays || !teacher.workingDays[dayName])) continue;
