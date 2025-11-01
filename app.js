@@ -1,5 +1,5 @@
-// Per-year timetable app (patched): normalize grid to avoid missing/invalid arrays which cause render errors.
-// Replace your existing app.js with this file and reload the page.
+// Per-year timetable app (patched): use DOM modals instead of window.confirm/alert so the app works
+// inside sandboxed iframes (allow-modals missing). All confirm/alert calls replaced with async modal helpers.
 
 (function(){
   // State
@@ -83,6 +83,101 @@
     ['Sports Science',1]
   ];
 
+  // Simple DOM modal helpers (non-blocking). They return Promises so callers can await them.
+  function alertDialog(message, title = 'Notice') {
+    return new Promise(resolve => {
+      const modal = createModalContainer();
+      const box = createModalBox(title);
+
+      const msg = document.createElement('div');
+      msg.style.margin = '8px 0 12px';
+      msg.textContent = message;
+      box.appendChild(msg);
+
+      const btn = document.createElement('button');
+      btn.textContent = 'OK';
+      stylePrimaryButton(btn);
+      btn.addEventListener('click', () => { document.body.removeChild(modal); resolve(); });
+      box.appendChild(btn);
+
+      modal.appendChild(box);
+      document.body.appendChild(modal);
+      btn.focus();
+    });
+  }
+
+  function confirmDialog(message, title = 'Confirm') {
+    return new Promise(resolve => {
+      const modal = createModalContainer();
+      const box = createModalBox(title);
+
+      const msg = document.createElement('div');
+      msg.style.margin = '8px 0 12px';
+      msg.textContent = message;
+      box.appendChild(msg);
+
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.justifyContent = 'flex-end';
+      row.style.gap = '8px';
+
+      const cancel = document.createElement('button');
+      cancel.textContent = 'Cancel';
+      cancel.style.padding = '8px 12px';
+      cancel.style.borderRadius = '6px';
+      cancel.style.border = '1px solid #e0e6ef';
+      cancel.addEventListener('click', () => { document.body.removeChild(modal); resolve(false); });
+
+      const ok = document.createElement('button');
+      ok.textContent = 'OK';
+      stylePrimaryButton(ok);
+      ok.addEventListener('click', () => { document.body.removeChild(modal); resolve(true); });
+
+      row.appendChild(cancel);
+      row.appendChild(ok);
+      box.appendChild(row);
+
+      modal.appendChild(box);
+      document.body.appendChild(modal);
+      ok.focus();
+    });
+  }
+
+  function createModalContainer(){
+    const modal = document.createElement('div');
+    modal.style.position = 'fixed';
+    modal.style.left = '0';
+    modal.style.top = '0';
+    modal.style.right = '0';
+    modal.style.bottom = '0';
+    modal.style.background = 'rgba(0,0,0,0.25)';
+    modal.style.zIndex = 9999;
+    modal.addEventListener('click', (e)=>{ if(e.target === modal) { /*click outside does nothing*/ } });
+    return modal;
+  }
+  function createModalBox(title){
+    const box = document.createElement('div');
+    box.style.width = '420px';
+    box.style.margin = '70px auto';
+    box.style.background = '#fff';
+    box.style.padding = '14px';
+    box.style.borderRadius = '10px';
+    box.style.boxShadow = '0 10px 40px rgba(10,20,40,0.2)';
+    const h = document.createElement('h3');
+    h.textContent = title;
+    h.style.margin = '0 0 8px';
+    box.appendChild(h);
+    return box;
+  }
+  function stylePrimaryButton(btn){
+    btn.style.padding = '8px 12px';
+    btn.style.borderRadius = '6px';
+    btn.style.border = 'none';
+    btn.style.background = '#1976d2';
+    btn.style.color = '#fff';
+    btn.style.cursor = 'pointer';
+  }
+
   // Storage
   function save() {
     const data = {
@@ -90,7 +185,7 @@
       subjects: state.subjects, teachers: state.teachers, rooms: state.rooms,
       lessons: state.lessons, grid: state.grid
     };
-    localStorage.setItem('school_timetable_per_year_v1', JSON.stringify(data));
+    try { localStorage.setItem('school_timetable_per_year_v1', JSON.stringify(data)); } catch(e) { console.warn('Save failed', e); }
   }
   function load(){
     try {
@@ -134,7 +229,7 @@
     return `hsl(${hue} 70% 60%)`;
   }
 
-  // Grid: years × days × slots (slots = 1 + periods)
+  // Grid helpers
   function createEmptyGrid(){
     const slots = 1 + state.periods; // slot0 = Form
     const grid = [];
@@ -149,21 +244,15 @@
     return grid;
   }
 
-  // New: ensure state.grid always matches years × days × slots shape
   function normalizeGrid(){
-    // ensure grid is array
     if(!Array.isArray(state.grid)) state.grid = createEmptyGrid();
     const slots = 1 + state.periods;
-    // ensure number of year rows
     while(state.grid.length < state.years.length) state.grid.push([]);
     if(state.grid.length > state.years.length) state.grid.splice(state.years.length);
-    // for each year ensure days and slot arrays are correct
     for(let y=0; y<state.years.length; y++){
       if(!Array.isArray(state.grid[y])) state.grid[y] = [];
-      // ensure days
       while(state.grid[y].length < state.days.length) state.grid[y].push(new Array(slots).fill(null));
       if(state.grid[y].length > state.days.length) state.grid[y].splice(state.days.length);
-      // ensure each day has right slot length
       for(let d=0; d<state.days.length; d++){
         if(!Array.isArray(state.grid[y][d])) state.grid[y][d] = new Array(slots).fill(null);
         if(state.grid[y][d].length < slots){
@@ -175,7 +264,7 @@
     }
   }
 
-  // Rendering (wrapped with try/catch to log errors and avoid silent failure)
+  // Rendering (try/catch keeps UI alive)
   function renderAll(){
     try {
       normalizeGrid();
@@ -191,7 +280,6 @@
       save();
     } catch(err){
       console.error('renderAll error', err);
-      // keep UI alive and show message in console
       el.timetable.innerHTML = '<div style="color:#b00;padding:12px">An error occurred — check the console for details.</div>';
     }
   }
@@ -244,20 +332,20 @@
       c.appendChild(d);
     });
     $$('.edit-teacher', c).forEach(btn=> btn.addEventListener('click', ()=> editTeacherModal(btn.dataset.id)));
-    $$('.remove-teacher', c).forEach(btn=> btn.addEventListener('click', ()=>{
+    $$('.remove-teacher', c).forEach(btn=> btn.addEventListener('click', async ()=>{
       const id = btn.dataset.id;
-      if(confirm('Remove teacher and their lessons?')){
-        state.lessons = state.lessons.filter(l=>l.teacherId !== id);
-        for(let y=0;y<state.grid.length;y++){
-          for(let d=0;d<state.grid[y].length;d++){
-            for(let s=0;s<state.grid[y][d].length;s++){
-              if(state.grid[y][d][s] && state.grid[y][d][s].teacherId === id) state.grid[y][d][s] = null;
-            }
+      const ok = await confirmDialog('Remove teacher and their lessons?');
+      if(!ok) return;
+      state.lessons = state.lessons.filter(l=>l.teacherId !== id);
+      for(let y=0;y<state.grid.length;y++){
+        for(let d=0;d<state.grid[y].length;d++){
+          for(let s=0;s<state.grid[y][d].length;s++){
+            if(state.grid[y][d][s] && state.grid[y][d][s].teacherId === id) state.grid[y][d][s] = null;
           }
         }
-        state.teachers = state.teachers.filter(t=>t.id!==id);
-        renderAll();
       }
+      state.teachers = state.teachers.filter(t=>t.id!==id);
+      renderAll();
     }));
   }
 
@@ -266,7 +354,6 @@
   }
 
   function renderLessonSelectors(){
-    // year select multi
     el.lessonYear.innerHTML=''; state.years.forEach(y=>{ const o=document.createElement('option'); o.value=y; o.textContent=y; el.lessonYear.appendChild(o); });
     el.lessonSubject.innerHTML=''; state.subjects.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.textContent=`${s.name} (${s.defaultCount}/wk)`; el.lessonSubject.appendChild(o); });
     el.lessonTeacher.innerHTML=''; const blank=document.createElement('option'); blank.value=''; blank.textContent='(none)'; el.lessonTeacher.appendChild(blank);
@@ -280,7 +367,6 @@
     const c = el.tokens; c.innerHTML='';
     const counts = {};
     state.lessons.forEach(l => counts[l.id] = (counts[l.id]||0) + l.count );
-    // subtract placements across grid (placed lessonId)
     for(let y=0;y<state.grid.length;y++){
       for(let d=0; d<state.grid[y].length; d++){
         for(let s=0;s<state.grid[y][d].length;s++){
@@ -289,7 +375,6 @@
         }
       }
     }
-    // Render tokens by lesson remaining (year shows inside token)
     state.lessons.forEach(l=>{
       const remaining = counts[l.id] || 0;
       if(remaining <= 0) return;
@@ -360,7 +445,6 @@
 
           const assigned = state.grid[y] && state.grid[y][d] && state.grid[y][d][s];
           if(assigned){
-            // FIX: use 'sub' consistently (previously declared subj but referenced as sub)
             const sub = state.subjects.find(x=>x.id===assigned.subjectId);
             const t = state.teachers.find(x=>x.id===assigned.teacherId);
             const r = state.rooms.find(x=>x.id===assigned.roomId);
@@ -448,7 +532,8 @@
   }
   function cellDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
   function cellDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
-  function cellDrop(e){
+
+  async function cellDrop(e){
     e.preventDefault();
     e.currentTarget.classList.remove('drag-over');
     const lessonId = e.dataTransfer.getData('text/plain') || draggingLessonId || state.pickedLessonId;
@@ -459,26 +544,26 @@
     const lesson = state.lessons.find(l=>l.id===lessonId);
     if(!lesson) return;
     if(lesson.year !== state.years[y]){
-      alert(`This lesson is for ${lesson.year}. You can only place it in the ${lesson.year} row.`);
+      await alertDialog(`This lesson is for ${lesson.year}. You can only place it in the ${lesson.year} row.`);
       return;
     }
-    assignLessonToCell(lessonId, y, d, s);
+    await assignLessonToCell(lessonId, y, d, s);
     draggingLessonId = null;
     state.pickedLessonId = null;
     renderAll();
   }
 
-  function assignLessonToCell(lessonId, yearIndex, dayIndex, slotIndex){
+  async function assignLessonToCell(lessonId, yearIndex, dayIndex, slotIndex){
     const lesson = state.lessons.find(l=>l.id===lessonId);
     if(!lesson) return;
     if(lesson.teacherId){
       const teacher = state.teachers.find(t=>t.id===lesson.teacherId);
       const dayName = state.days[dayIndex];
       if(teacher && !(teacher.workingDays && teacher.workingDays[dayName])){
-        if(!confirm(`Teacher ${teacher.name} does not work ${dayName}. Place anyway?`)) return;
+        const ok = await confirmDialog(`Teacher ${teacher.name} does not work ${dayName}. Place anyway?`);
+        if(!ok) return;
       }
     }
-    // normalize grid to be safe before assignment
     normalizeGrid();
     state.grid[yearIndex][dayIndex][slotIndex] = {
       lessonId: lesson.id,
@@ -491,14 +576,14 @@
   }
 
   // Cell click quick assign
-  function cellClick(e){
+  async function cellClick(e){
     const y = +e.currentTarget.dataset.yearIndex;
     const d = +e.currentTarget.dataset.dayIndex;
     const s = +e.currentTarget.dataset.slotIndex;
     if(state.pickedLessonId){
       const lesson = state.lessons.find(l=>l.id===state.pickedLessonId);
-      if(lesson && lesson.year !== state.years[y]){ alert(`Picked lesson is for ${lesson.year}. Click a ${lesson.year} row.`); return; }
-      assignLessonToCell(state.pickedLessonId, y, d, s);
+      if(lesson && lesson.year !== state.years[y]){ await alertDialog(`Picked lesson is for ${lesson.year}. Click a ${lesson.year} row.`); return; }
+      await assignLessonToCell(state.pickedLessonId, y, d, s);
       state.pickedLessonId = null; renderAll(); return;
     }
     quickAssignPopup(e.currentTarget, y, d, s);
@@ -532,22 +617,22 @@
         const t = state.teachers.find(x=>x.id===l.teacherId);
         const row = document.createElement('div'); row.style.marginBottom='6px';
         const btn = document.createElement('button'); btn.textContent = `${l.year} • ${s? s.name : '?'} ${t?(' • '+t.code):''}`; btn.style.width='100%';
-        btn.addEventListener('click', ()=>{ assignLessonToCell(l.id, yearIndex, dayIndex, slotIndex); document.body.removeChild(menu); renderAll(); });
+        btn.addEventListener('click', async ()=>{ await assignLessonToCell(l.id, yearIndex, dayIndex, slotIndex); document.body.removeChild(menu); renderAll(); });
         row.appendChild(btn); menu.appendChild(row);
       });
     }
     const cancel = document.createElement('button'); cancel.textContent='Close'; cancel.style.marginTop='6px'; cancel.addEventListener('click', ()=>document.body.removeChild(menu)); menu.appendChild(cancel);
     document.body.appendChild(menu);
-
     const rect = cellEl.getBoundingClientRect();
     menu.style.left = Math.min(window.innerWidth-320, rect.left + 12) + 'px';
     menu.style.top = Math.min(window.innerHeight-220, rect.top + 12) + 'px';
   }
 
   // Auto-scheduler
-  function autoSchedule(){
-    if(!state.lessons.length){ alert('No lessons to schedule. Create lessons first.'); return; }
-    if(!confirm('Auto-schedule will clear existing assignments. Continue?')) return;
+  async function autoSchedule(){
+    if(!state.lessons.length){ await alertDialog('No lessons to schedule. Create lessons first.'); return; }
+    const ok = await confirmDialog('Auto-schedule will clear existing assignments. Continue?');
+    if(!ok) return;
     state.grid = createEmptyGrid();
     normalizeGrid();
     const tokens = [];
@@ -606,14 +691,14 @@
   }
   function importJSONFile(file){
     const reader = new FileReader();
-    reader.onload = (ev)=>{
+    reader.onload = async (ev)=>{
       try{
         const d = JSON.parse(ev.target.result);
         state.days = d.days || state.days; state.periods = d.periods || state.periods;
         state.years = d.years || state.years; state.subjects = d.subjects || []; state.teachers = d.teachers || []; state.rooms = d.rooms || []; state.lessons = d.lessons || []; state.grid = d.grid || createEmptyGrid();
         normalizeGrid();
         renderAll();
-      }catch(e){ alert('Invalid JSON'); console.error(e); }
+      }catch(e){ await alertDialog('Invalid JSON'); console.error(e); }
     };
     reader.readAsText(file);
   }
@@ -646,9 +731,9 @@
 
   // UI wiring
   function wireEvents(){
-    el.btnApplySettings.addEventListener('click', ()=>{
+    el.btnApplySettings.addEventListener('click', async ()=>{
       const days = Array.from(el.selectDays.selectedOptions).map(o=>o.value);
-      if(days.length<1){ alert('Pick at least one day'); return; }
+      if(days.length<1){ await alertDialog('Pick at least one day'); return; }
       const p = Math.max(1, Math.min(12, parseInt(el.inputPeriods.value) || 5));
       state.days = days;
       state.periods = p;
@@ -657,7 +742,7 @@
       renderAll();
     });
 
-    el.btnAddTeacher.addEventListener('click', ()=>{
+    el.btnAddTeacher.addEventListener('click', async ()=>{
       const nm = el.teacherFullName.value.trim(); if(!nm) return;
       const existingCodes = state.teachers.map(t => t.code);
       const code = generateTeacherCode(nm, existingCodes);
@@ -669,13 +754,13 @@
       renderAll();
     });
 
-    el.btnGenerateLessonsForYears.addEventListener('click', ()=>{
+    el.btnGenerateLessonsForYears.addEventListener('click', async ()=>{
       let selectedYears = Array.from(el.lessonYear.selectedOptions).map(o=>o.value);
       if(selectedYears.length === 0){
         const nodes = Array.from(el.yearsList.children).filter(n => n.classList.contains('active'));
         selectedYears = nodes.map(n => n.firstChild.textContent);
       }
-      if(selectedYears.length===0){ alert('Select years (in Create Lesson or click years) first.'); return; }
+      if(selectedYears.length===0){ await alertDialog('Select years (in Create Lesson or click years) first.'); return; }
       selectedYears.forEach(y=>{
         state.subjects.forEach(s=>{
           const exist = state.lessons.find(l => l.year === y && l.subjectId === s.id);
@@ -687,10 +772,10 @@
       renderAll();
     });
 
-    el.btnAddLesson.addEventListener('click', ()=>{
+    el.btnAddLesson.addEventListener('click', async ()=>{
       const selectedYears = Array.from(el.lessonYear.selectedOptions).map(o=>o.value);
       if(selectedYears.length === 0){
-        alert('Select one or more years in the lesson Year selector to add lesson(s).'); return;
+        await alertDialog('Select one or more years in the lesson Year selector to add lesson(s).'); return;
       }
       const subjectId = el.lessonSubject.value;
       const teacherId = el.lessonTeacher.value || null;
@@ -706,7 +791,7 @@
     });
 
     el.btnAutoSchedule.addEventListener('click', autoSchedule);
-    el.btnClear.addEventListener('click', ()=> { if(confirm('Clear all assignments?')){ state.grid = createEmptyGrid(); normalizeGrid(); renderAll(); }});
+    el.btnClear.addEventListener('click', async ()=> { const ok = await confirmDialog('Clear all assignments?'); if(ok){ state.grid = createEmptyGrid(); normalizeGrid(); renderAll(); }});
     el.btnExportJSON.addEventListener('click', exportJSON);
     el.btnImportJSON.addEventListener('click', ()=> el.fileImport.click());
     el.fileImport.addEventListener('change', (ev)=>{ const f = ev.target.files[0]; if(f) importJSONFile(f); ev.target.value=''; });
