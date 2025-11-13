@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>School Timetable — Per-Year View</title>
   <link rel="stylesheet" href="style.css" />
-  <script src="xlsx.min.js"></script>
 </head>
 <body>
   <header>
@@ -13,10 +12,9 @@
     <div class="top-actions">
       <button id="btnAutoSchedule">Auto-schedule</button>
       <button id="btnClear">Clear assignments</button>
-      <button id="btnResetAll">Reset all</button>
       <button id="btnExportJSON">Export JSON</button>
       <button id="btnImportJSON">Import JSON</button>
-      <button id="btnExportExcel">Export Excel</button>
+      <button id="btnExportCSV">Export CSV</button>
       <button id="btnPrint">Print</button>
     </div>
   </header>
@@ -51,7 +49,7 @@
       </section>
 
       <section class="card">
-        <h2>Subjects (edit per-week)</h2>
+        <h2>Subjects (default per-week)</h2>
         <div id="subjectsList" class="small"></div>
         <div style="margin-top:8px">
           <button id="btnGenerateLessonsForYears">Generate lessons for selected years</button>
@@ -70,11 +68,11 @@
           <button id="btnAddTeacher">Add</button>
         </div>
         <div id="teachersList" class="small"></div>
-        <div class="small" style="margin-top:8px">Click a teacher to edit working days/periods, subjects or remove.</div>
+        <div class="small" style="margin-top:8px">Click a teacher to edit working days or remove.</div>
       </section>
 
       <section class="card">
-        <h2>Create Lesson (multi-year, merged)</h2>
+        <h2>Create Lesson (multi-year)</h2>
         <div class="form-row">
           <select id="lessonYear" multiple size="4" style="min-width:120px"></select>
         </div>
@@ -91,12 +89,9 @@
           <input id="lessonCount" type="number" min="1" value="1" />
           <button id="btnAddLesson">Add Lesson(s)</button>
         </div>
-        <div class="form-row">
-          <label>Merged Years:</label>
-          <select id="lessonMergeYears" multiple size="4"></select>
-        </div>
         <div class="small">Values persist after adding to speed up bulk input.</div>
       </section>
+
     </aside>
 
     <section class="timetable-wrap">
@@ -124,16 +119,19 @@
         <section class="card" id="tokensPanel">
           <h3>Unassigned Lessons</h3>
           <div id="tokens" class="tokens"></div>
-          <div class="small">Drag tokens to the correct year/day/slot, or click token then click a slot. Only matching assignments are allowed.</div>
+          <div class="small">Drag tokens to the correct year/day/slot, or click token then click a slot. Only year-matching assignments are allowed.</div>
         </section>
       </div>
     </section>
+
   </main>
 
   <footer>
     <small>Local timetable editor · data stored in your browser. Customize as needed.</small>
   </footer>
+
   <input type="file" id="fileImport" accept="application/json" style="display:none" />
+
   <script src="app.js"></script>
 </body>
 </html>
